@@ -35,7 +35,7 @@ int OnInit()
 //--- for development purpose
    OnNewBar();
 //--- create timer
-   EventSetTimer(MILLISECOND_TIMER);
+//EventSetTimer(MILLISECOND_TIMER);
 
    return(INIT_SUCCEEDED);
   }
@@ -60,6 +60,10 @@ void OnDeinit(const int reason)
 void OnNewBar()
   {
    CJAVal req_json;
+   req_json["symbol"]=Symbol();
+//--- getting current status
+   GetOpenOrders(req_json);
+   GetOpenPositions(req_json);
 //--- getting last bars
    GetLastBars(req_json);
 //--- sending bars data to server
@@ -163,31 +167,76 @@ void OnBookEvent(const string &symbol)
 //+------------------------------------------------------------------+
 void GetLastBars(CJAVal &js_ret)
   {
-   MqlRates rates_array[];
-   CJAVal js_data;
-//CJAVal js_bar;
 //--- Get prices
-   int rates_count=CopyRates(NULL,NULL,1,LASTBARSCOUNT,rates_array);
+   MqlRates rates_array[];
+   int rates_count=CopyRates(Symbol(),Period(),1,LASTBARSCOUNT,rates_array);
    if(rates_count>0)
      {
       //--- Construct string of rates and send to PULL client.
       for(int i=0; i<rates_count; i++)
         {
-         js_data["data"][i]["date"]=TimeToString(rates_array[i].time);
-         js_data["data"][i]["open"]=DoubleToString(rates_array[i].open);
-         js_data["data"][i]["high"]=DoubleToString(rates_array[i].high);
-         js_data["data"][i]["low"]=DoubleToString(rates_array[i].low);
-         js_data["data"][i]["close"]=DoubleToString(rates_array[i].close);
-         js_data["data"][i]["tick_volume"]=DoubleToString(rates_array[i].tick_volume);
-         js_data["data"][i]["real_volume"]=DoubleToString(rates_array[i].real_volume);
-
+         js_ret["data"][i]["date"]=TimeToString(rates_array[i].time);
+         js_ret["data"][i]["open"]=DoubleToString(rates_array[i].open);
+         js_ret["data"][i]["high"]=DoubleToString(rates_array[i].high);
+         js_ret["data"][i]["low"]=DoubleToString(rates_array[i].low);
+         js_ret["data"][i]["close"]=DoubleToString(rates_array[i].close);
+         js_ret["data"][i]["tick_volume"]=DoubleToString(rates_array[i].tick_volume);
+         js_ret["data"][i]["real_volume"]=DoubleToString(rates_array[i].real_volume);
         }
-
      }
    else
      {
-      js_data["data"]="NULL";
+      js_ret["data"]="NULL";
      }
-   js_ret.Set(js_data);
+  }
+//+------------------------------------------------------------------+
+void GetOpenPositions(CJAVal &js_ret)
+  {
+//--- Get Open Positions
+   if(PositionSelect(Symbol()))
+     {
+      js_ret["position"]["ticket"]=IntegerToString(PositionGetInteger(POSITION_TICKET));
+      js_ret["position"]["identifier"]=IntegerToString(PositionGetInteger(POSITION_IDENTIFIER));
+      js_ret["position"]["time"]=TimeToString(PositionGetInteger(POSITION_TIME));
+      js_ret["position"]["type"]=IntegerToString(PositionGetInteger(POSITION_TYPE));
+      js_ret["position"]["volume"]=DoubleToString(PositionGetDouble(POSITION_VOLUME));
+      js_ret["position"]["open"]=DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN));
+      js_ret["position"]["price"]= DoubleToString(PositionGetDouble(POSITION_PRICE_CURRENT));
+      js_ret["position"]["swap"] = DoubleToString(PositionGetDouble(POSITION_SWAP));
+      js_ret["position"]["profit"]=DoubleToString(PositionGetDouble(POSITION_PROFIT));
+      js_ret["position"]["sl"] = DoubleToString(PositionGetDouble(POSITION_SL));
+      js_ret["position"]["tp"] = DoubleToString(PositionGetDouble(POSITION_TP));
+     }
+   else
+     {
+      js_ret["position"]="NULL";
+     }
+  }
+//+------------------------------------------------------------------+
+void GetOpenOrders(CJAVal &js_ret)
+  {
+//--- Get Open Orders of current chart only
+   int c1=0;
+   for(int c=0;c<OrdersTotal();c++)
+     {
+      ulong ticket=OrderGetTicket(c);
+      if(OrderSelect(ticket) && (OrderGetString(ORDER_SYMBOL)==Symbol()))
+        {
+         js_ret["order"][c1]["ticket"]=IntegerToString(OrderGetInteger(ORDER_TICKET));
+         js_ret["order"][c1]["time"]=TimeToString(OrderGetInteger(ORDER_TIME_SETUP));
+         js_ret["order"][c1]["type"]=IntegerToString(OrderGetInteger(ORDER_TYPE));
+         js_ret["order"][c1]["expiration"]=TimeToString(OrderGetInteger(ORDER_TIME_EXPIRATION));
+         js_ret["order"][c1]["volume"]=DoubleToString(OrderGetDouble(ORDER_VOLUME_CURRENT));
+         js_ret["order"][c1]["price"]=DoubleToString(OrderGetDouble(ORDER_PRICE_CURRENT));
+         js_ret["order"][c1]["sl"]=DoubleToString(OrderGetDouble(ORDER_SL));
+         js_ret["order"][c1]["tp"]=DoubleToString(OrderGetDouble(ORDER_TP));
+         c1++;
+        }
+     }
+   Print(c1);
+   if(c1==0)
+     {
+      js_ret["order"]="NULL";
+     }
   }
 //+------------------------------------------------------------------+
