@@ -11,6 +11,7 @@
 #property tester_library "libsodium.dll"
 #include <Zmq/Zmq.mqh>
 #include <OnNewBar.mqh>
+#include <JAson.mqh>
 
 input string PROJECT_NAME="ZMQ_client";
 input string ZEROMQ_PROTOCOL="tcp";
@@ -31,6 +32,8 @@ int OnInit()
 //--- socket connection
    socket.connect(StringFormat("%s://%s:%d",ZEROMQ_PROTOCOL,HOSTNAME,PORT));
    context.setBlocky(false);
+//--- for development purpose
+   OnNewBar();
 //--- create timer
    EventSetTimer(MILLISECOND_TIMER);
 
@@ -56,10 +59,13 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnNewBar()
   {
-//--- getting last bars 
-   string s=GetLastBars();
+   CJAVal req_json;
+//--- getting last bars
+   GetLastBars(req_json);
 //--- sending bars data to server
-   ZmqMsg request(s);
+   string req_context="";
+   req_json.Serialize(req_context);
+   ZmqMsg request(req_context);
    Print("last bars data to server");
    socket.send(request);
 //--- getting server response
@@ -155,35 +161,33 @@ void OnBookEvent(const string &symbol)
 
   }
 //+------------------------------------------------------------------+
-string GetLastBars()
+void GetLastBars(CJAVal &js_ret)
   {
-   string zmq_ret;
    MqlRates rates_array[];
-
+   CJAVal js_data;
+//CJAVal js_bar;
 //--- Get prices
    int rates_count=CopyRates(NULL,NULL,1,LASTBARSCOUNT,rates_array);
    if(rates_count>0)
      {
-      zmq_ret=zmq_ret+" 'data': [";
-
       //--- Construct string of rates and send to PULL client.
       for(int i=0; i<rates_count; i++)
         {
-         if(i==0)
-            zmq_ret=zmq_ret+"{'time':'"+TimeToString(rates_array[i].time)+"', 'open':"+DoubleToString(rates_array[i].open)+", 'high':"+DoubleToString(rates_array[i].high)+", 'low':"+DoubleToString(rates_array[i].low)+", 'close':"+DoubleToString(rates_array[i].close)+", 'tick_volume':"+IntegerToString(rates_array[i].tick_volume)+", 'spread':"+IntegerToString(rates_array[i].spread)+", 'real_volume':"+IntegerToString(rates_array[i].real_volume)+"}";
-         else
-            zmq_ret=zmq_ret+", {'time':'"+TimeToString(rates_array[i].time)+"', 'open':"+DoubleToString(rates_array[i].open)+", 'high':"+DoubleToString(rates_array[i].high)+", 'low':"+DoubleToString(rates_array[i].low)+", 'close':"+DoubleToString(rates_array[i].close)+", 'tick_volume':"+IntegerToString(rates_array[i].tick_volume)+", 'spread':"+IntegerToString(rates_array[i].spread)+", 'real_volume':"+IntegerToString(rates_array[i].real_volume)+"}";
+         js_data["data"][i]["date"]=TimeToString(rates_array[i].time);
+         js_data["data"][i]["open"]=DoubleToString(rates_array[i].open);
+         js_data["data"][i]["high"]=DoubleToString(rates_array[i].high);
+         js_data["data"][i]["low"]=DoubleToString(rates_array[i].low);
+         js_data["data"][i]["close"]=DoubleToString(rates_array[i].close);
+         js_data["data"][i]["tick_volume"]=DoubleToString(rates_array[i].tick_volume);
+         js_data["data"][i]["real_volume"]=DoubleToString(rates_array[i].real_volume);
+
         }
-      zmq_ret=zmq_ret+"]";
+
      }
-//------ if NO data then forms response as json:
-//------ {'_action: 'HIST',
-//------ '_response': 'NOT_AVAILABLE'
-//------ }
    else
      {
-      zmq_ret=zmq_ret+"'data': null";
+      js_data["data"]="NULL";
      }
-   return   zmq_ret;
+   js_ret.Set(js_data);
   }
 //+------------------------------------------------------------------+
