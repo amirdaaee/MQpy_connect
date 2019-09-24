@@ -47,20 +47,20 @@ int OnInit()
    context.setBlocky(false);
 //--------------------------------------- for development purpose
 //OnNewBar();
-
+/*
    CJAVal test;
    test["command"]="order_new";
-   test["args"]["action"]="TRADE_ACTION_DEAL";
-   test["args"]["type"]="ORDER_TYPE_BUY";
-   test["args"]["type_time"]="null";
-   test["args"]["type_filling"]="ORDER_FILLING_FOK";
+   test["args"]["action"]="TRADE_ACTION_PENDING";
+   test["args"]["type"]="ORDER_TYPE_BUY_LIMIT";
+   test["args"]["type_time"]="ORDER_TIME_GTC";
+   test["args"]["type_filling"]="ORDER_FILLING_IOC";
    test["args"]["volume"]="0.01";
-   test["args"]["price"]="null";
+   test["args"]["price"]="1.0000";
    test["args"]["stoplimit"]="null";
    test["args"]["sl"]="null";
    test["args"]["tp"]="null";
    test["args"]["expiration"]="null";
-   WhichAction(test);
+   WhichAction(test);*/
 //---------------------------------------
 //--- create timer
    EventSetTimer(MILLISECOND_TIMER);
@@ -279,7 +279,7 @@ void WhichAction(CJAVal &resp_json)
   {
    if(resp_json["command"].ToStr()=="order_new")
      {
-      NewOrder(&resp_json);
+      OrderNew(&resp_json);
      }
    else if(resp_json["command"].ToStr()=="resume")
      {
@@ -287,7 +287,7 @@ void WhichAction(CJAVal &resp_json)
      }
   }
 //+------------------------------------------------------------------+
-void NewOrder(CJAVal &resp_json)
+void OrderNew(CJAVal &resp_json)
   {
    Print("New order request");
    MqlTradeRequest MTrequest={0};
@@ -324,4 +324,43 @@ void NewOrder(CJAVal &resp_json)
      }
    PrintFormat("broker return code : %d",MTresult.retcode);
   }
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+/*void PositionClose(CJAVal &resp_json)
+  {
+   Print("Close Position request");
+   MqlTradeRequest MTrequest={0};
+   MqlTradeResult  MTresult;
+// fulfill default
+   MTrequest.symbol=Symbol();
+   MTrequest.magic=MagicNumber;
+// fulfill from response
+   ENUM_TRADE_REQUEST_ACTIONS action=TRADE_ACTION_DEAL;
+   ENUM_ORDER_TYPE  type=ORDER_TYPE_BUY;
+   ENUM_ORDER_TYPE_FILLING type_filling=NULL;
+   ENUM_ORDER_TYPE_TIME type_time=NULL;
+
+   MTrequest.action=StringToEnum(resp_json["args"]["action"].ToStr(),action);
+   MTrequest.type=StringToEnum(resp_json["args"]["type"].ToStr(),type);
+   MTrequest.type_filling=StringToEnum(resp_json["args"]["type_filling"].ToStr(),type_filling);
+   MTrequest.type_time=StringToEnum(resp_json["args"]["type_time"].ToStr(),type_time);
+   MTrequest.volume=resp_json["args"]["volume"].ToDbl();
+   MTrequest.price=resp_json["args"]["price"].ToDbl();
+   MTrequest.stoplimit=resp_json["args"]["stoplimit"].ToDbl();
+   MTrequest.sl= resp_json["args"]["sl"].ToDbl();
+   MTrequest.tp= resp_json["args"]["tp"].ToDbl();
+   MTrequest.expiration=StringToTime(resp_json["args"]["expiration"].ToStr());
+
+// order allocation
+   bool status=OrderSend(MTrequest,MTresult);
+   if(status==true)
+     {
+      Print("Done");
+     }
+   else
+     {
+      Print("Fail");
+     }
+   PrintFormat("broker return code : %d",MTresult.retcode);
+  }*/
 //+------------------------------------------------------------------+
