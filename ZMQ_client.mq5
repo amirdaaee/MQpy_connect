@@ -285,7 +285,40 @@ void WhichAction(CJAVal &resp_json)
      {
       Print("resume");
      }
+     else if(resp_json["command"].ToStr()=="position_modify ")
+     {
+       position_modify(&resp_json);
+     }
   }
+  
+  
+  void position_modify(CJAVal &resp_json)
+  {
+  
+  
+   MqlTradeRequest MTrequest={0};
+   MqlTradeResult  MTresult={0};
+   
+     MTrequest.action = TRADE_ACTION_SLTP ;
+    
+     ulong  position_ticket ;
+     
+    
+    if( SymbolSelect( Symbol(),1))
+    {
+     position_ticket = PositionGetInteger(POSITION_TICKET);
+    }
+ 
+    
+    MTrequest.position   = position_ticket ;
+    MTrequest.magic      = MagicNumber;  
+    MTrequest.sl         = resp_json["args"]["sl"].ToDbl();
+    MTrequest.tp         = resp_json["args"]["tp"].ToDbl();
+    
+    
+     OrderSend(MTrequest,MTresult);
+  
+   }
 //+------------------------------------------------------------------+
 void NewOrder(CJAVal &resp_json)
   {
