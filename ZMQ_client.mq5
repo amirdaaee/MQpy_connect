@@ -9,6 +9,7 @@
 #property strict
 #property tester_library "libzmq.dll"
 #property tester_library "libsodium.dll"
+
 #include <Zmq/Zmq.mqh>
 #include <OnNewBar.mqh>
 #include <JAson.mqh>
@@ -25,6 +26,18 @@ input int MagicNumber=123456;
 Context context(PROJECT_NAME);
 Socket socket(context,ZMQ_REQ);
 //+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+template<typename T>
+T StringToEnum(string str,T enu)
+  {
+   for(int i=0;i<256;i++)
+      if(EnumToString(enu=(T)i)==str)
+         return(enu);
+//---
+   return((T)NULL);
+  }
+//+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
@@ -34,20 +47,20 @@ int OnInit()
    context.setBlocky(false);
 //--------------------------------------- for development purpose
 //OnNewBar();
-/*
+
    CJAVal test;
    test["command"]="order_new";
    test["args"]["action"]="TRADE_ACTION_DEAL";
    test["args"]["type"]="ORDER_TYPE_BUY";
-   test["args"]["type_time"]=NULL;
-   test["args"]["type_filling"]=NULL;
+   test["args"]["type_time"]="null";
+   test["args"]["type_filling"]="ORDER_FILLING_FOK";
    test["args"]["volume"]="0.01";
-   test["args"]["price"]=NULL";
-   test["args"]["stoplimit"]=NULL;
-   test["args"]["sl"]=NULL;
-   test["args"]["tp"]=NULL;
-   test["args"]["expiration"]=NULL;
-   WhichAction(test);*/
+   test["args"]["price"]="null";
+   test["args"]["stoplimit"]="null";
+   test["args"]["sl"]="null";
+   test["args"]["tp"]="null";
+   test["args"]["expiration"]="null";
+   WhichAction(test);
 //---------------------------------------
 //--- create timer
    EventSetTimer(MILLISECOND_TIMER);
@@ -278,20 +291,27 @@ void NewOrder(CJAVal &resp_json)
   {
    Print("New order request");
    MqlTradeRequest MTrequest={0};
-   MqlTradeResult  MTresult={0};
+   MqlTradeResult  MTresult;
+// fulfill default
    MTrequest.symbol=Symbol();
    MTrequest.magic=MagicNumber;
 // fulfill from response
-   MTrequest.action=(ENUM_TRADE_REQUEST_ACTIONS)resp_json["args"]["action"].ToStr();
-   MTrequest.type=(ENUM_ORDER_TYPE)resp_json["args"]["type"].ToStr();
-   MTrequest.type_time=(ENUM_ORDER_TYPE_TIME)resp_json["args"]["type_time"].ToStr();
-   MTrequest.type_filling=(ENUM_ORDER_TYPE_FILLING)resp_json["args"]["type_filling"].ToStr();
+   ENUM_TRADE_REQUEST_ACTIONS action=TRADE_ACTION_DEAL;
+   ENUM_ORDER_TYPE  type=ORDER_TYPE_BUY;
+   ENUM_ORDER_TYPE_FILLING type_filling=NULL;
+   ENUM_ORDER_TYPE_TIME type_time=NULL;
+
+   MTrequest.action=StringToEnum(resp_json["args"]["action"].ToStr(),action);
+   MTrequest.type=StringToEnum(resp_json["args"]["type"].ToStr(),type);
+   MTrequest.type_filling=StringToEnum(resp_json["args"]["type_filling"].ToStr(),type_filling);
+   MTrequest.type_time=StringToEnum(resp_json["args"]["type_time"].ToStr(),type_time);
    MTrequest.volume=resp_json["args"]["volume"].ToDbl();
    MTrequest.price=resp_json["args"]["price"].ToDbl();
    MTrequest.stoplimit=resp_json["args"]["stoplimit"].ToDbl();
    MTrequest.sl= resp_json["args"]["sl"].ToDbl();
    MTrequest.tp= resp_json["args"]["tp"].ToDbl();
    MTrequest.expiration=StringToTime(resp_json["args"]["expiration"].ToStr());
+
 // order allocation
    bool status=OrderSend(MTrequest,MTresult);
    if(status==true)
