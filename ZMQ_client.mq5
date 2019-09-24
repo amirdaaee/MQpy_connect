@@ -32,10 +32,25 @@ int OnInit()
 //--- socket connection
    socket.connect(StringFormat("%s://%s:%d",ZEROMQ_PROTOCOL,HOSTNAME,PORT));
    context.setBlocky(false);
-//--- for development purpose
-   OnNewBar();
+//--------------------------------------- for development purpose
+//OnNewBar();
+/*
+   CJAVal test;
+   test["command"]="order_new";
+   test["args"]["action"]="TRADE_ACTION_DEAL";
+   test["args"]["type"]="ORDER_TYPE_BUY";
+   test["args"]["type_time"]=NULL;
+   test["args"]["type_filling"]=NULL;
+   test["args"]["volume"]="0.01";
+   test["args"]["price"]=NULL";
+   test["args"]["stoplimit"]=NULL;
+   test["args"]["sl"]=NULL;
+   test["args"]["tp"]=NULL;
+   test["args"]["expiration"]=NULL;
+   WhichAction(test);*/
+//---------------------------------------
 //--- create timer
-//EventSetTimer(MILLISECOND_TIMER);
+   EventSetTimer(MILLISECOND_TIMER);
 
    return(INIT_SUCCEEDED);
   }
@@ -54,46 +69,13 @@ void OnDeinit(const int reason)
    Print("ZMQ context destroy");
 
   }
-// getting responce message from python server 
-void GetResponce()
-  {
-
-   CJAVal resp_json;
-   ZmqMsg message;
-   PollItem items[1];
-   socket.fillPollItem(items[0],ZMQ_POLLIN);
-   Socket::poll(items,PULLTIMEOUT);
-//--- parsing server's response data
-   if(items[0].hasInput())
-     {
-      socket.recv(message);
-      Print(message.getData());
-
-      resp_json.Deserialize(message.getData());
-      WhichAction(resp_json);
-
-     }
-
-  }
-//parsing responce message and convert it to json format
-/* void Convert_Responce_to_Json( string message )
- {
-    CJAVal resp_json;
-    
-     resp_json.Deserialize(message);
-     WhichAction(resp_json)
-   
- 
- }
-  
-  */
-
 //+------------------------------------------------------------------+
 //| Expert bar function                                             |
 //+------------------------------------------------------------------+
 void OnNewBar()
   {
    CJAVal req_json;
+   req_json["event"] = "newbar";
    req_json["symbol"]=Symbol();
 //--- getting current status
    GetOpenOrders(req_json);
@@ -107,17 +89,7 @@ void OnNewBar()
    Print("last bars data to server");
    socket.send(request);
 //--- getting server response
-   ZmqMsg message;
-   PollItem items[1];
-   socket.fillPollItem(items[0],ZMQ_POLLIN);
-   Socket::poll(items,PULLTIMEOUT);
-//--- parsing server's response data
-   if(items[0].hasInput())
-     {
-      socket.recv(message);
-      Print(message.getData());
-     }
-
+   GetResponse();
   }
 //+------------------------------------------------------------------+
 //| Timer function                                                   |
@@ -201,12 +173,10 @@ void OnBookEvent(const string &symbol)
 //+------------------------------------------------------------------+
 void GetLastBars(CJAVal &js_ret)
   {
-//--- Get prices
    MqlRates rates_array[];
    int rates_count=CopyRates(Symbol(),Period(),1,LASTBARSCOUNT,rates_array);
    if(rates_count>0)
      {
-      //--- Construct string of rates and send to PULL client.
       for(int i=0; i<rates_count; i++)
         {
          js_ret["data"][i]["date"]=TimeToString(rates_array[i].time);
@@ -216,6 +186,7 @@ void GetLastBars(CJAVal &js_ret)
          js_ret["data"][i]["close"]=DoubleToString(rates_array[i].close);
          js_ret["data"][i]["tick_volume"]=DoubleToString(rates_array[i].tick_volume);
          js_ret["data"][i]["real_volume"]=DoubleToString(rates_array[i].real_volume);
+         js_ret["data"][i]["spread"]=DoubleToString(rates_array[i].spread);
         }
      }
    else
@@ -226,13 +197,12 @@ void GetLastBars(CJAVal &js_ret)
 //+------------------------------------------------------------------+
 void GetOpenPositions(CJAVal &js_ret)
   {
-//--- Get Open Positions
    if(PositionSelect(Symbol()))
      {
       js_ret["position"]["ticket"]=IntegerToString(PositionGetInteger(POSITION_TICKET));
       js_ret["position"]["identifier"]=IntegerToString(PositionGetInteger(POSITION_IDENTIFIER));
       js_ret["position"]["time"]=TimeToString(PositionGetInteger(POSITION_TIME));
-      js_ret["position"]["type"]=IntegerToString(PositionGetInteger(POSITION_TYPE));
+      js_ret["position"]["type"]=EnumToString(ENUM_POSITION_TYPE(PositionGetInteger(POSITION_TYPE)));
       js_ret["position"]["volume"]=DoubleToString(PositionGetDouble(POSITION_VOLUME));
       js_ret["position"]["open"]=DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN));
       js_ret["position"]["price"]= DoubleToString(PositionGetDouble(POSITION_PRICE_CURRENT));
@@ -249,7 +219,6 @@ void GetOpenPositions(CJAVal &js_ret)
 //+------------------------------------------------------------------+
 void GetOpenOrders(CJAVal &js_ret)
   {
-//--- Get Open Orders of current chart only
    int c1=0;
    for(int c=0;c<OrdersTotal();c++)
      {
@@ -258,7 +227,9 @@ void GetOpenOrders(CJAVal &js_ret)
         {
          js_ret["order"][c1]["ticket"]=IntegerToString(OrderGetInteger(ORDER_TICKET));
          js_ret["order"][c1]["time"]=TimeToString(OrderGetInteger(ORDER_TIME_SETUP));
-         js_ret["order"][c1]["type"]=IntegerToString(OrderGetInteger(ORDER_TYPE));
+         js_ret["order"][c1]["type"]=EnumToString(ENUM_ORDER_TYPE(OrderGetInteger(ORDER_TYPE)));
+         js_ret["order"][c1]["state"]=EnumToString(ENUM_ORDER_STATE(OrderGetInteger(ORDER_STATE)));
+         js_ret["order"][c1]["lifetime"]=EnumToString(ENUM_ORDER_TYPE_TIME(OrderGetInteger(ORDER_TYPE_TIME)));
          js_ret["order"][c1]["expiration"]=TimeToString(OrderGetInteger(ORDER_TIME_EXPIRATION));
          js_ret["order"][c1]["volume"]=DoubleToString(OrderGetDouble(ORDER_VOLUME_CURRENT));
          js_ret["order"][c1]["price"]=DoubleToString(OrderGetDouble(ORDER_PRICE_CURRENT));
@@ -267,147 +238,70 @@ void GetOpenOrders(CJAVal &js_ret)
          c1++;
         }
      }
-   Print(c1);
    if(c1==0)
      {
       js_ret["order"]="NULL";
      }
   }
 //+------------------------------------------------------------------+
-
+void GetResponse()
+  {
+   CJAVal resp_json;
+   ZmqMsg message;
+   PollItem items[1];
+   socket.fillPollItem(items[0],ZMQ_POLLIN);
+   Socket::poll(items,PULLTIMEOUT);
+// empty response handler
+   if(items[0].hasInput())
+     {
+      socket.recv(message);
+      Print(message.getData());
+      resp_json.Deserialize(message.getData());
+      WhichAction(resp_json);
+     }
+   else{Print("empty response from server");}
+  }
+//+------------------------------------------------------------------+
 void WhichAction(CJAVal &resp_json)
   {
-   if(resp_json["command"].ToStr()=="new_order")
+   if(resp_json["command"].ToStr()=="order_new")
      {
-      New_Order_Requset(&resp_json);
+      NewOrder(&resp_json);
      }
-
    else if(resp_json["command"].ToStr()=="resume")
      {
       Print("resume");
      }
   }
 //+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-void New_Order_Requset(CJAVal &resp_json)
+void NewOrder(CJAVal &resp_json)
   {
+   Print("New order request");
    MqlTradeRequest MTrequest={0};
    MqlTradeResult  MTresult={0};
-
-   ENUM_TRADE_REQUEST_ACTIONS  TRADE_REQUEST_ACTIONS=resp_json["args"]["action"].ToStr();
-   MTrequest.action=TRADE_REQUEST_ACTIONS;
-/*
-   if(resp_json["args"]["action"].ToStr()=="TRADE_ACTION_DEAL")
+   MTrequest.symbol=Symbol();
+   MTrequest.magic=MagicNumber;
+// fulfill from response
+   MTrequest.action=(ENUM_TRADE_REQUEST_ACTIONS)resp_json["args"]["action"].ToStr();
+   MTrequest.type=(ENUM_ORDER_TYPE)resp_json["args"]["type"].ToStr();
+   MTrequest.type_time=(ENUM_ORDER_TYPE_TIME)resp_json["args"]["type_time"].ToStr();
+   MTrequest.type_filling=(ENUM_ORDER_TYPE_FILLING)resp_json["args"]["type_filling"].ToStr();
+   MTrequest.volume=resp_json["args"]["volume"].ToDbl();
+   MTrequest.price=resp_json["args"]["price"].ToDbl();
+   MTrequest.stoplimit=resp_json["args"]["stoplimit"].ToDbl();
+   MTrequest.sl= resp_json["args"]["sl"].ToDbl();
+   MTrequest.tp= resp_json["args"]["tp"].ToDbl();
+   MTrequest.expiration=StringToTime(resp_json["args"]["expiration"].ToStr());
+// order allocation
+   bool status=OrderSend(MTrequest,MTresult);
+   if(status==true)
      {
-      MTrequest.action=TRADE_ACTION_DEAL;
+      Print("Done");
      }
-
-   else if(resp_json["args"]["action"].ToStr()=="TRADE_ACTION_DEAL")
-     {
-      MTrequest.action=TRADE_ACTION_DEAL;
-
-     }
-     */
-
-   ENUM_ORDER_TYPE ORDER_TYPE=resp_json["args"]["type"].ToStr();
-   MTrequest.type=ORDER_TYPE;
-/*
-
-   if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_BUY")
-     {
-      MTrequest.type=ORDER_TYPE_BUY;
-     }
-
-   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_SELL")
-     {
-      MTrequest.type=ORDER_TYPE_SELL;
-     }
-
-   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_BUY_LIMIT")
-     {
-      MTrequest.type=ORDER_TYPE_BUY_LIMIT;
-     }
-
-   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_SELL_LIMIT")
-     {
-      MTrequest.type=ORDER_TYPE_SELL_LIMIT;
-     }
-   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_BUY_STOP")
-     {
-      MTrequest.type=ORDER_TYPE_BUY_STOP;
-     }
-   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_SELL_STOP")
-     {
-      MTrequest.type=ORDER_TYPE_SELL_STOP;
-     }
-   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_BUY_STOP_LIMIT")
-     {
-      MTrequest.type=ORDER_TYPE_BUY_STOP_LIMIT;
-     }
-   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_SELL_STOP_LIMIT")
-     {
-      MTrequest.type=ORDER_TYPE_SELL_STOP_LIMIT;
-     }
-
    else
      {
-      MTrequest.type=NULL;
+      Print("Fail");
      }
-     
-     */
-
-   ENUM_ORDER_TYPE_FILLING  ORDER_TYPE_FILLING=resp_json["args"]["type_filling"].ToStr();
-   MTrequest.type_filling=ORDER_TYPE_FILLING;
-
-/*if(resp_json["args"]["type_filling"].ToStr()=="ORDER_FILLING_FOK")
-     {
-      MTrequest.type_filling=ORDER_FILLING_FOK;
-     }
-
-   else if(resp_json["args"]["type_filling"].ToStr()=="ORDER_FILLING_IOC")
-     {
-      MTrequest.type_filling=ORDER_FILLING_IOC;
-     }
-     
-    */
-
-
-   ENUM_ORDER_TYPE_TIME ORDER_TYPE_TIME=resp_json["args"]["type_time"].ToStr();
-   MTrequest.type_time=ORDER_TYPE_TIME;
-
-/*  if(resp_json["args"]["type_time"].ToStr()=="ORDER_TIME_GTC")
-     {
-      MTrequest.type_time=ORDER_TIME_GTC;
-     }
-
-   else if(resp_json["args"]["type_time"].ToStr()=="ORDER_TIME_DAY")
-     {
-      MTrequest.type_time=ORDER_TIME_DAY;
-     }
-
-   else if(resp_json["args"]["type_time"].ToStr()=="ORDER_TIME_SPECIFIED")
-     {
-      MTrequest.type_time=ORDER_TIME_SPECIFIED;
-     }
-     
-     */
-
-// type of trade operation
-   MTrequest.symbol=Symbol();                                         // symbol
-   MTrequest.volume= resp_json["args"]["volume"].ToDbl();             // volume of 0.1 lot
-
-                                                                      // MTrequest.price     = SymbolInfoDouble(Symbol(),SYMBOL_ASK);
-
-   MTrequest.price=resp_json["args"]["price"].ToDbl();             // price for opening
-   MTrequest.magic      = MagicNumber;
-   MTrequest.stoplimit  = resp_json["args"]["stoplimit"].ToDbl();
-   MTrequest.sl         = resp_json["args"]["sl"].ToDbl();
-   MTrequest.tp         = resp_json["args"]["tp"].ToDbl();
-   string expiration    = resp_json["args"]["expiration"].ToStr();
-   MTrequest.expiration = StringToTime(expiration);
-
-   OrderSend(MTrequest,MTresult);
-
+   PrintFormat("broker return code : %d",MTresult.retcode);
   }
 //+------------------------------------------------------------------+
