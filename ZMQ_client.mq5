@@ -54,6 +54,40 @@ void OnDeinit(const int reason)
    Print("ZMQ context destroy");
 
   }
+// getting responce message from python server 
+void GetResponce()
+  {
+
+   CJAVal resp_json;
+   ZmqMsg message;
+   PollItem items[1];
+   socket.fillPollItem(items[0],ZMQ_POLLIN);
+   Socket::poll(items,PULLTIMEOUT);
+//--- parsing server's response data
+   if(items[0].hasInput())
+     {
+      socket.recv(message);
+      Print(message.getData());
+
+      resp_json.Deserialize(message.getData());
+      WhichAction(resp_json);
+
+     }
+
+  }
+//parsing responce message and convert it to json format
+/* void Convert_Responce_to_Json( string message )
+ {
+    CJAVal resp_json;
+    
+     resp_json.Deserialize(message);
+     WhichAction(resp_json)
+   
+ 
+ }
+  
+  */
+
 //+------------------------------------------------------------------+
 //| Expert bar function                                             |
 //+------------------------------------------------------------------+
@@ -238,5 +272,142 @@ void GetOpenOrders(CJAVal &js_ret)
      {
       js_ret["order"]="NULL";
      }
+  }
+//+------------------------------------------------------------------+
+
+void WhichAction(CJAVal &resp_json)
+  {
+   if(resp_json["command"].ToStr()=="new_order")
+     {
+      New_Order_Requset(&resp_json);
+     }
+
+   else if(resp_json["command"].ToStr()=="resume")
+     {
+      Print("resume");
+     }
+  }
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void New_Order_Requset(CJAVal &resp_json)
+  {
+   MqlTradeRequest MTrequest={0};
+   MqlTradeResult  MTresult={0};
+
+   ENUM_TRADE_REQUEST_ACTIONS  TRADE_REQUEST_ACTIONS=resp_json["args"]["action"].ToStr();
+   MTrequest.action=TRADE_REQUEST_ACTIONS;
+/*
+   if(resp_json["args"]["action"].ToStr()=="TRADE_ACTION_DEAL")
+     {
+      MTrequest.action=TRADE_ACTION_DEAL;
+     }
+
+   else if(resp_json["args"]["action"].ToStr()=="TRADE_ACTION_DEAL")
+     {
+      MTrequest.action=TRADE_ACTION_DEAL;
+
+     }
+     */
+
+   ENUM_ORDER_TYPE ORDER_TYPE=resp_json["args"]["type"].ToStr();
+   MTrequest.type=ORDER_TYPE;
+/*
+
+   if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_BUY")
+     {
+      MTrequest.type=ORDER_TYPE_BUY;
+     }
+
+   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_SELL")
+     {
+      MTrequest.type=ORDER_TYPE_SELL;
+     }
+
+   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_BUY_LIMIT")
+     {
+      MTrequest.type=ORDER_TYPE_BUY_LIMIT;
+     }
+
+   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_SELL_LIMIT")
+     {
+      MTrequest.type=ORDER_TYPE_SELL_LIMIT;
+     }
+   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_BUY_STOP")
+     {
+      MTrequest.type=ORDER_TYPE_BUY_STOP;
+     }
+   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_SELL_STOP")
+     {
+      MTrequest.type=ORDER_TYPE_SELL_STOP;
+     }
+   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_BUY_STOP_LIMIT")
+     {
+      MTrequest.type=ORDER_TYPE_BUY_STOP_LIMIT;
+     }
+   else if(resp_json["args"]["type"].ToStr()=="ORDER_TYPE_SELL_STOP_LIMIT")
+     {
+      MTrequest.type=ORDER_TYPE_SELL_STOP_LIMIT;
+     }
+
+   else
+     {
+      MTrequest.type=NULL;
+     }
+     
+     */
+
+   ENUM_ORDER_TYPE_FILLING  ORDER_TYPE_FILLING=resp_json["args"]["type_filling"].ToStr();
+   MTrequest.type_filling=ORDER_TYPE_FILLING;
+
+/*if(resp_json["args"]["type_filling"].ToStr()=="ORDER_FILLING_FOK")
+     {
+      MTrequest.type_filling=ORDER_FILLING_FOK;
+     }
+
+   else if(resp_json["args"]["type_filling"].ToStr()=="ORDER_FILLING_IOC")
+     {
+      MTrequest.type_filling=ORDER_FILLING_IOC;
+     }
+     
+    */
+
+
+   ENUM_ORDER_TYPE_TIME ORDER_TYPE_TIME=resp_json["args"]["type_time"].ToStr();
+   MTrequest.type_time=ORDER_TYPE_TIME;
+
+/*  if(resp_json["args"]["type_time"].ToStr()=="ORDER_TIME_GTC")
+     {
+      MTrequest.type_time=ORDER_TIME_GTC;
+     }
+
+   else if(resp_json["args"]["type_time"].ToStr()=="ORDER_TIME_DAY")
+     {
+      MTrequest.type_time=ORDER_TIME_DAY;
+     }
+
+   else if(resp_json["args"]["type_time"].ToStr()=="ORDER_TIME_SPECIFIED")
+     {
+      MTrequest.type_time=ORDER_TIME_SPECIFIED;
+     }
+     
+     */
+
+// type of trade operation
+   MTrequest.symbol=Symbol();                                         // symbol
+   MTrequest.volume= resp_json["args"]["volume"].ToDbl();             // volume of 0.1 lot
+
+                                                                      // MTrequest.price     = SymbolInfoDouble(Symbol(),SYMBOL_ASK);
+
+   MTrequest.price=resp_json["args"]["price"].ToDbl();             // price for opening
+   MTrequest.magic      = MagicNumber;
+   MTrequest.stoplimit  = resp_json["args"]["stoplimit"].ToDbl();
+   MTrequest.sl         = resp_json["args"]["sl"].ToDbl();
+   MTrequest.tp         = resp_json["args"]["tp"].ToDbl();
+   string expiration    = resp_json["args"]["expiration"].ToStr();
+   MTrequest.expiration = StringToTime(expiration);
+
+   OrderSend(MTrequest,MTresult);
+
   }
 //+------------------------------------------------------------------+
