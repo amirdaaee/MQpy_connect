@@ -3,10 +3,10 @@ import time
 import json
 from abc import abstractmethod
 import datetime
+import traceback
 
 # ------------------------------------------------------------------------------------------
 # -------------------------------- Global Constants
-# --------------------------------
 # MT5 enums
 mt5_enums = dict()
 mt5_enums['position_open'] = {
@@ -108,8 +108,10 @@ class MTConnect:
     _resp_empty = {'command': 'resume'}
     _resp_error = {'command': 'error'}
     # self variables
-    last_known_position = None
-    last_known_order = None
+    positions = None
+    orders = None
+    # place holders
+    response_functions = None
 
     # .................................
     def __init__(self, ip='*', port='5556', protocol='tcp', verbuse=False):
@@ -123,6 +125,7 @@ class MTConnect:
 
         """
 
+        self.set_defaults()
         self.ip = ip
         self.port = str(port)
         self.protocol = protocol
@@ -130,11 +133,16 @@ class MTConnect:
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.REP)
         self.socket.bind(self.network_path)
-        self.response_functions = {
-            "newbar": self.onbar_event,
-            "listen": self.on_listen,
-        }
         self.verbuse = verbuse
+
+    # .................................
+    def set_defaults(self):
+        self.response_functions = {
+            "init": self.event_init_,
+            "deinit": self.event_deinit_,
+            "newtrade": self.event_newtrade_,
+            "newbar": self.event_newbar_,
+        }
 
     # ------------------------------------------------------------
     # ------------------------------ routines
@@ -142,10 +150,8 @@ class MTConnect:
         try:
             message = self._retrieve_()
             message = self._parse_(message)
-            self.last_message = message
             if self.verbuse:
                 print(message)
-            self._database_fill(message)
             resp = self._act_(message)
             self._response_(resp)
             if self.verbuse:
@@ -154,6 +160,7 @@ class MTConnect:
         except Exception as E:
             self._response_(self._resp_error)
             print('[Exception] following exception occurred:')
+            traceback.print_tb(E.__traceback__)
             print(E)
             return False
 
@@ -169,28 +176,20 @@ class MTConnect:
                 raise Exception(E)
         return message
 
-    def _parse_(self, message):
-        type(self)
+    @classmethod
+    def _parse_(cls, message):
         message = str(message)[2:-1]
         message = json.loads(message)
         return message
 
-    def _database_fill(self, message):
-        if 'position' in message['state'].keys():
-            if message['state']['position'] == 'null':
-                message['state']['position'] = []
-            self.last_known_position = message['state']['position']
-        if 'order' in message['state'].keys():
-            if message['state']['order'] == 'null':
-                message['state']['order'] = []
-            self.last_known_order = message['state']['order']
-
     def _act_(self, message):
         fn = self.response_functions[message['event']]
-        resp = fn(message['state'])
+        resp = fn(message['args'])
         return resp
 
     def _response_(self, message):
+        if message is None:
+            message = self._resp_empty
         message = json.dumps(message)
         time.sleep(1e-3)
         self.socket.send_string(message)
@@ -366,7 +365,9 @@ class MTConnect:
             position_type = (position_type,)
 
         ticket = []
-        for position in self.last_message['state']['position']:
+        if self.positions is None:
+            raise Exception('no position data available')
+        for position in self.positions:
             if position['type'] in position_type:
                 ticket.append(position['ticket'])
         sl = [sl] * len(ticket)
@@ -433,7 +434,9 @@ class MTConnect:
             position_type = (position_type,)
 
         ticket = []
-        for position in self.last_message['state']['position']:
+        if self.positions is None:
+            raise Exception('no position data available')
+        for position in self.positions:
             if position['type'] in position_type:
                 ticket.append(position['ticket'])
         volume = [volume] * len(ticket)
@@ -441,15 +444,59 @@ class MTConnect:
 
     # ------------------------------------------------------------
     # ------------------------------ request handlers
-    # new bar
+    def event_init_(self, message):
+        print("client initialized : magic={}".format(message['magic']))
+        position = message['position']
+        order = message['order']
+
+        if position == 'null':
+            position = []
+        if order == 'null':
+            order = []
+
+        self.positions = position
+        self.orders = order
+        return self.event_init(message)
+
     @abstractmethod
-    def onbar_event(self, message):
+    def event_init(self, message):
         dict(message)
         return self._resp_empty
 
     # .................................
-    # client ready for new action
+    def event_deinit_(self, message):
+        print("client destroyed : magic={}".format(message['magic']))
+        return self.event_deinit(message)
+
     @abstractmethod
-    def on_listen(self, message):
+    def event_deinit(self, message):
+        dict(message)
+        return self._resp_empty
+
+    # .................................
+    def event_newtrade_(self, message):
+        position = message['position']
+        order = message['order']
+
+        if position == 'null':
+            position = []
+        if order == 'null':
+            order = []
+
+        self.positions = position
+        self.orders = order
+        return self.event_newtrade(message)
+
+    @abstractmethod
+    def event_newtrade(self, message):
+        dict(message)
+        return self._resp_empty
+
+    # .................................
+    def event_newbar_(self, message):
+        return self.event_newbar(message)
+
+    @abstractmethod
+    def event_newbar(self, message):
         dict(message)
         return self._resp_empty
