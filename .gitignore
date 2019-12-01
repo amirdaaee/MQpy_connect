@@ -104,3 +104,13 @@ venv.bak/
 .mypy_cache/
 
 *.ex5
+
+.idea/misc.xml
+
+.idea/modules.xml
+
+.idea/MTpy_connect.iml
+
+.idea/vcs.xml
+
+.idea/workspace.xml
