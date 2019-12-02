@@ -32,21 +32,22 @@ Socket socket(context,ZMQ_REQ);
 //+------------------------------------------------------------------+
 template<typename T>
 T StringToEnum(string str,T enu)
-{
-	for(int i=0; i<256; i++)
-	{
-		if(EnumToString(enu=(T)i)==str)
-		{
-			return(enu);
-		}
-		return((T)NULL);
-	}
-}
+  {
+   for(int i=0; i<256; i++)
+     {
+      if(EnumToString(enu=(T)i)==str)
+        {
+         return(enu);
+        }
+
+     }
+   return((T)NULL);
+  }
 //+------------------------------------------------------------------+
 //| Expert initialization function
 //+------------------------------------------------------------------+
 int OnInit()
-{
+  {
 //--- socket connection
    socket.connect(StringFormat("%s://%s:%d",ZEROMQ_PROTOCOL,HOSTNAME,PORT));
    context.setBlocky(false);
@@ -58,17 +59,23 @@ int OnInit()
    req_json["args"]["magic"]=MagicNumber;
    GetOpenOrders(req_json);
    GetOpenPositions(req_json);
+   GetLastBars(req_json, LASTBARSCOUNT);
    SendRequest(req_json);
+   if(ServerLastMsg != "resume")
+     {
+      ExpertRemove();
+      return(-1);
+     }
 //--- create timer
 //    EventSetTimer(MILLISECOND_TIMER);
    Print("initialization success");
    return(INIT_SUCCEEDED);
-}
+  }
 //+------------------------------------------------------------------+
 //| Expert deinitialization function
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
-{
+  {
 //--- destroy timer
 //EventKillTimer();
 //--- send deinit request to server
@@ -81,66 +88,66 @@ void OnDeinit(const int reason)
    Print("ZMQ context shutdown");
    context.destroy(0);
    Print("ZMQ context destroy");
-}
+  }
 //+------------------------------------------------------------------+
 //| events handler
 //+------------------------------------------------------------------+
 void OnTrade()
-{
+  {
    CJAVal req_json;
    req_json["event"]="newtrade";
    GetOpenOrders(req_json);
    GetOpenPositions(req_json);
    SendRequest(req_json);
-}
+  }
 //+------------------------------------------------------------------+
 void OnNewBar()
-{
+  {
    CJAVal req_json;
    req_json["event"]="newbar";
-   GetLastBars(req_json);
+   GetLastBars(req_json, 1);
    SendRequest(req_json);
-}
+  }
 //+------------------------------------------------------------------+
 //| Request fullfil
 //| *** all data for current symbol only
 //+------------------------------------------------------------------+
 void GetOpenOrders(CJAVal &js_ret)
-{
-	int c=0;
-	for(int i=0; i<OrdersTotal(); i++)
-	{
-		if(OrderSelect(i,SELECT_BY_TICKET,MODE_TRADES) && (OrderGetString(ORDER_SYMBOL)==Symbol()))
-		{
-			js_ret["args"]["order"][c]["TICKET"]=IntegerToString(OrderGetInteger(ORDER_TICKET));
-			js_ret["args"]["order"][c]["TIME_SETUP"]=TimeToString(OrderGetInteger(ORDER_TIME_SETUP));
-			js_ret["args"]["order"][c]["TYPE"]=EnumToString(ENUM_ORDER_TYPE(OrderGetInteger(ORDER_TYPE)));
-			js_ret["args"]["order"][c]["STATE"]=EnumToString(ENUM_ORDER_STATE(OrderGetInteger(ORDER_STATE)));
-			js_ret["args"]["order"][c]["TIME_EXPIRATION"]=TimeToString(OrderGetInteger(ORDER_TIME_EXPIRATION));
-			js_ret["args"]["order"][c]["TYPE_FILLING"]=EnumToString(ENUM_ORDER_TYPE_FILLING(OrderGetInteger(ORDER_TYPE_FILLING)));
-			js_ret["args"]["order"][c]["TYPE_TIME"]=EnumToString(ENUM_ORDER_TYPE_TIME(OrderGetInteger(ORDER_TYPE_TIME)));
-			js_ret["args"]["order"][c]["MAGIC"]=IntegerToString(OrderGetInteger(ORDER_MAGIC));
-			js_ret["args"]["order"][c]["VOLUME_CURRENT"]=DoubleToString(OrderGetDouble(ORDER_VOLUME_CURRENT));
-			js_ret["args"]["order"][c]["PRICE_OPEN"]=DoubleToString(OrderGetDouble(ORDER_PRICE_OPEN));
-			js_ret["args"]["order"][c]["SL"]=DoubleToString(OrderGetDouble(ORDER_SL));
-			js_ret["args"]["order"][c]["TP"]=DoubleToString(OrderGetDouble(ORDER_TP));
-			js_ret["args"]["order"][c]["PRICE_STOPLIMIT"]=DoubleToString(OrderGetDouble(ORDER_PRICE_STOPLIMIT));
-			c++;
-		}
-	}
-	if(c==0)
-	{
+  {
+   int c=0;
+   for(int i=0; i<OrdersTotal(); i++)
+     {
+      if(OrderSelect(i,SELECT_BY_TICKET,MODE_TRADES) && (OrderGetString(ORDER_SYMBOL)==Symbol()))
+        {
+         js_ret["args"]["order"][c]["TICKET"]=IntegerToString(OrderGetInteger(OrderTicket()));
+         js_ret["args"]["order"][c]["TIME_SETUP"]=TimeToString(OrderGetInteger(ORDER_TIME_SETUP));
+         js_ret["args"]["order"][c]["TYPE"]=EnumToString(ENUM_ORDER_TYPE(OrderGetInteger(ORDER_TYPE)));
+         //         js_ret["args"]["order"][c]["STATE"]=EnumToString(ENUM_ORDER_STATE(OrderGetInteger(ORDER_STATE)));
+         js_ret["args"]["order"][c]["TIME_EXPIRATION"]=TimeToString(OrderGetInteger(ORDER_TIME_EXPIRATION));
+         //         js_ret["args"]["order"][c]["TYPE_FILLING"]=EnumToString(ENUM_ORDER_TYPE_FILLING(OrderGetInteger(ORDER_TYPE_FILLING)));
+         //         js_ret["args"]["order"][c]["TYPE_TIME"]=EnumToString(ENUM_ORDER_TYPE_TIME(OrderGetInteger(ORDER_TYPE_TIME)));
+         js_ret["args"]["order"][c]["MAGIC"]=IntegerToString(OrderGetInteger(ORDER_MAGIC));
+         js_ret["args"]["order"][c]["VOLUME_CURRENT"]=DoubleToString(OrderGetDouble(ORDER_VOLUME_CURRENT));
+         js_ret["args"]["order"][c]["PRICE_OPEN"]=DoubleToString(OrderGetDouble(ORDER_PRICE_OPEN));
+         js_ret["args"]["order"][c]["SL"]=DoubleToString(OrderGetDouble(ORDER_SL));
+         js_ret["args"]["order"][c]["TP"]=DoubleToString(OrderGetDouble(ORDER_TP));
+         js_ret["args"]["order"][c]["PRICE_STOPLIMIT"]=DoubleToString(OrderGetDouble(ORDER_PRICE_STOPLIMIT));
+         c++;
+        }
+     }
+   if(c==0)
+     {
       js_ret["args"]["order"]="null";
-	}
-}
+     }
+  }
 //+------------------------------------------------------------------+
 void GetOpenPositions(CJAVal &js_ret)
-{
+  {
    int c=0;
    for(int i=0; i<PositionsTotal(); i++)
-	{
+     {
       if((OrderSelect(PositionGetTicket(i),SELECT_BY_TICKET,MODE_TRADES)))
-		{
+        {
          js_ret["args"]["position"][c]["TICKET"]=IntegerToString(OrderTicket());
          js_ret["args"]["position"][c]["TYPE"]=OrderType();
          js_ret["args"]["position"][c]["MAGIC"]=IntegerToString(OrderMagicNumber());
@@ -151,22 +158,22 @@ void GetOpenPositions(CJAVal &js_ret)
          js_ret["args"]["position"][c]["TP"] = DoubleToString(OrderTakeProfit());
          js_ret["args"]["position"][c]["PROFIT"]=DoubleToString(OrderProfit());
          c++;
-		}
-	}
+        }
+     }
    if(c==0)
-	{
+     {
       js_ret["args"]["position"]="null";
-	}
-}
+     }
+  }
 //+------------------------------------------------------------------+
-void GetLastBars(CJAVal &js_ret)
-{
+void GetLastBars(CJAVal &js_ret, int m_Bars)
+  {
    MqlRates rates_array[];
-   int rates_count=CopyRates(Symbol(),Period(),1,LASTBARSCOUNT,rates_array);
+   int rates_count=CopyRates(Symbol(),Period(),1,m_Bars,rates_array);
    if(rates_count>0)
-	{
+     {
       for(int i=0; i<rates_count; i++)
-		{
+        {
          js_ret["args"]["data"][i]["date"]=TimeToString(rates_array[i].time);
          js_ret["args"]["data"][i]["open"]=DoubleToString(rates_array[i].open);
          js_ret["args"]["data"][i]["high"]=DoubleToString(rates_array[i].high);
@@ -175,30 +182,30 @@ void GetLastBars(CJAVal &js_ret)
          js_ret["args"]["data"][i]["tick_volume"]=DoubleToString(rates_array[i].tick_volume);
          js_ret["args"]["data"][i]["real_volume"]=DoubleToString(rates_array[i].real_volume);
          js_ret["args"]["data"][i]["spread"]=DoubleToString(rates_array[i].spread);
-		}
-	}
+        }
+     }
    else
-	{
+     {
       js_ret["args"]["data"]="null";
-	}
-}
+     }
+  }
 //+------------------------------------------------------------------+
 //| Requesting
 //+------------------------------------------------------------------+
 void SendRequest(CJAVal &req_json)
-{
+  {
    req_json["magic"]=IntegerToString(MagicNumber);
    string req_context="";
    req_json.Serialize(req_context);
    ZmqMsg request(req_context);
    socket.send(request);
    GetResponse();
-}
+  }
 //+------------------------------------------------------------------+
 //| Response handle
 //+------------------------------------------------------------------+
 void GetResponse()
-{
+  {
    CJAVal resp_json;
    ZmqMsg message;
    PollItem items[1];
@@ -206,64 +213,87 @@ void GetResponse()
    Socket::poll(items,PULLTIMEOUT);
 //--- empty response handler
    if(items[0].hasInput())
-	{
+     {
       socket.recv(message);
       resp_json.Deserialize(message.getData());
       ResponseParse(resp_json);
-	}
+     }
    else
-	{
+     {
       Print("empty response from server");
-	}
-}
+     }
+  }
 //+------------------------------------------------------------------+
 void ResponseParse(CJAVal &resp_json)
-{
-	string resptype = resp_json["type"].ToStr();
-	if(resptype=="action")
-	{
-		WhichAction(resp_json);
-	}
-	else if(resptype=="message")
-	{
+  {
+   string resptype = resp_json["type"].ToStr();
+   if(resptype=="action")
+     {
+      WhichAction(resp_json);
+     }
+   else
+      if(resptype=="message")
+        {
+         WhichMessage(resp_json);
+        }
 
-	}
-
-}
+  }
 //+------------------------------------------------------------------+
 void WhichAction(CJAVal &resp_json)
-{
+  {
    string command=resp_json["command"].ToStr();
    if(command=="position_open")
-   	{
+     {
       PositionOpen(resp_json);
-		}
+     }
    /*   else
          if(command=="position_modify")
             PositionModify(&resp_json);
    */
-   else if(command=="position_close")
-	{
-		PositionClose(resp_json);
-	}
-	else
-	{
-		Print("command not understood");
-	}
-}
+   else
+      if(command=="position_close")
+        {
+         PositionClose(resp_json);
+        }
+      else
+        {
+         Print("command not understood");
+        }
+  }
+//+------------------------------------------------------------------+
+void WhichMessage(CJAVal &resp_json)
+  {
+   string command=resp_json["command"].ToStr();
+   if(command=="error")
+     {
+      Print("error");
+     }
+
+   else
+      if(command=="resume")
+        {
+         Print("resume");
+        }
+      else
+        {
+         Print("message not understood");
+        }
+   ServerLastMsg=command;
+  }
+
 //+------------------------------------------------------------------+
 //| Action
 //+------------------------------------------------------------------+
 void PositionOpen(CJAVal &resp_json)
-{
+  {
    Print("New order request");
    double price=0;
    enum type
-	{
+     {
       B=OP_BUY,// Buy Position
       S=OP_SELL,// Sell Position
       D,
-	};
+     };
    color OrderColor=clrWhite;
    type X;
 // fulfill from response
@@ -272,10 +302,10 @@ void PositionOpen(CJAVal &resp_json)
    double sl= resp_json["args"]["sl"].ToDbl();
    double tp= resp_json["args"]["tp"].ToDbl();
    if(X == S)
-	{
+     {
       OrderColor = clrRed;
       price= Bid;
-	}
+     }
    else
       if(X == B)
         {
@@ -316,6 +346,7 @@ void PositionModify(CJAVal &resp_json)
      }
   }
   */
+
 //+------------------------------------------------------------------+
 void PositionClose(CJAVal &resp_json)
   {
