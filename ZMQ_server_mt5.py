@@ -5,6 +5,7 @@ from abc import abstractmethod
 import datetime
 import traceback
 
+# todo:validation in client side
 # ------------------------------------------------------------------------------------------
 # -------------------------------- Global Constants
 # MT5 enums
