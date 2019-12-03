@@ -7,23 +7,22 @@ import traceback
 import pandas as pd
 
 
+def isnonstriter(obj):
+    return (not isinstance(obj, str)) and isinstance(obj, Iterable)
+
+
 # todo: merge into ZMQ_server_mt5.py (this is better version)
 class MTConnect:
     # ------------------------------------------------------------
     # ------------------------------ pre definition
-    # template message
-    __resp_empty__ = {'type': 'message', 'command': 'resume'}
-    __resp_error__ = {'type': 'message', 'command': 'error'}
     # self variables
-    empty_positions = pd.DataFrame(columns=['TICKET'])
-    empty_orders = pd.DataFrame(columns=['TICKET'])
-    positions = None
-    orders = None
+    empty_positions = pd.DataFrame(columns=['Ticket'])
+    empty_orders = pd.DataFrame(columns=['Ticket'])
+    positions = empty_positions.copy()
+    orders = empty_orders.copy()
     dataset = None
-    # place holders
-    response_functions = None
     # remote enums
-    order_type_translate = {
+    execution_type_translate = {
         'buy': 'OP_BUY',
         'sell': 'OP_SELL',
     }
@@ -43,13 +42,15 @@ class MTConnect:
         self.ip = ip
         self.port = str(port)
         self.protocol = protocol
+        self.verbuse = verbuse
+        self.client_init = False
         self.network_path = "{}://{}:{}".format(protocol, ip, port)
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.REP)
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.setsockopt(zmq.IMMEDIATE, 1)
         self.socket.bind(self.network_path)
-        self.verbuse = verbuse
+        print('server running at', self.network_path)
 
     # .................................
     def __set_defaults__(self):
@@ -58,7 +59,11 @@ class MTConnect:
             "deinit": self.__event_deinit__,
             "trade": self.__event_trade__,
             "newbar": self.__event_newbar__,
+            "tick": self.__event_tick__,
+            "sync": self.__sync_db__,
         }
+        self.__resp_empty__ = self.__response_template__('message', 'resume')
+        self.__resp_error__ = self.__response_template__('message', 'error')
 
     # ------------------------------------------------------------
     # ------------------------------ routines
@@ -73,7 +78,11 @@ class MTConnect:
             message = self.__parse__(message)
             if self.verbuse:
                 print('receive:', message)
-            resp = self.__act__(message)
+            if self.client_init or message['event'] == 'init' or message['event'] == 'sync':
+                resp = self.__act__(message)
+            else:
+                print('client not initialized. skipping current event. syncing db...')
+                resp = self.sync_req()
             self.__response__(resp)
             if self.verbuse:
                 print('response:', resp)
@@ -97,8 +106,8 @@ class MTConnect:
                 raise Exception(E)
         return message
 
-    @staticmethod
-    def __parse__(message):
+    def __parse__(self, message):
+        type(self)
         message = str(message)[2:-1]
         message = json.loads(message)
         return message
@@ -120,7 +129,7 @@ class MTConnect:
         if 'position' in data.keys():
             position = data['position']
             if position == 'null':
-                self.positions = self.empty_positions
+                self.positions = self.empty_positions.copy()
             else:
                 self.positions = pd.DataFrame.from_dict(position)
             if self.verbuse:
@@ -129,7 +138,7 @@ class MTConnect:
         if 'order' in data.keys():
             order = data['order']
             if order == 'null':
-                self.orders = self.empty_orders
+                self.orders = self.empty_orders.copy()
             else:
                 self.orders = pd.DataFrame.from_dict(order)
             if self.verbuse:
@@ -148,52 +157,101 @@ class MTConnect:
                 print('dataset:')
                 print(self.dataset)
 
-    # ------------------------------------------------------------
-    # ------------------------------ action functions
-    def position_open(self,
-                      type_order,
-                      volume=0.01,
-                      sl=None,
-                      tp=None):
+    @staticmethod
+    def __response_template__(rtype, rcommand):
         """
         Parameters
         ----------
-        type_order : str
+        rtype : str
+        rcommand : str
+
+        Returns
+        -------
+        Dict
+        """
+        return {'type': rtype, 'command': rcommand, 'args': {}}
+
+    # ------------------------------------------------------------
+    # ------------------------------ action functions
+    def sync_req(self):
+        resp = self.__response_template__('action', 'sync')
+        self.client_init = True
+        return resp
+
+    # .................................
+    def position_execute(self,
+                         type_order,
+                         volume=0.01,
+                         sl=None,
+                         tp=None,
+                         comment=None):
+        """
+        Market Execution order
+
+        Parameters
+        ----------
+        type_order : Iterable[str] or str
             'buy' or 'sell'
-        volume : float
-        sl,tp : float, optional
+        volume : Iterable[float] or float
+            if Iterable -> len == len(type_order)
+        sl,tp : Iterable[float or None] or float or None
+            None -> no sl or tp |
+            if Iterable -> len == len(type_order)
+        comment : Iterable[str or None] or str or None
 
         Returns
         -------
         object
         """
 
-        # todo:support for more type_order
         type(self)
-        type_order = type_order.lower()
-        type_order = self.order_type_translate[type_order]
-        resp = dict()
-        resp['type'] = 'action'
-        resp['command'] = 'position_open'
-        # detailed argument
-        resp['args'] = dict()
-        resp['args']['type'] = type_order
-        resp['args']['volume'] = volume
-        resp['args']['sl'] = sl
-        resp['args']['tp'] = tp
+        if not isnonstriter(type_order):
+            type_order = (type_order,)
+        if not isinstance(volume, Iterable):
+            volume = (volume,) * len(type_order)
+        if not isinstance(sl, Iterable):
+            sl = (sl,) * len(type_order)
+        if not isinstance(tp, Iterable):
+            tp = (tp,) * len(type_order)
+        if not isnonstriter(comment):
+            comment = (comment,) * len(type_order)
+
+        assert len(type_order) == len(volume), 'len(volume) should be == len(type_order)'
+        assert len(type_order) == len(sl), 'len(sl) should be == len(type_order)'
+        assert len(type_order) == len(tp), 'len(tp) should be == len(type_order)'
+        assert len(type_order) == len(comment), 'len(comment) should be == len(type_order)'
+
+        orders = []
+        for type_order_, volume_, sl_, tp_, comment_ in zip(type_order, volume, sl, tp, comment):
+            type_order_ = self.execution_type_translate[type_order_.lower()]
+            orders.append({'type': type_order_, 'volume': volume_, 'sl': sl_, 'tp': tp_, 'cm': comment_})
+
+        resp = self.__response_template__('action', 'position_open')
+        resp['args']['orderlist'] = orders
         return resp
 
     # .................................
-    def position_close(self, ticket, volume=None):
+    # todo:support for pending positions
+    def position_pending(self):
+        """pending order"""
+        raise Exception('still developing')
+
+    # .................................
+    def position_modify(self,
+                        ticket=None,
+                        sl=None,
+                        tp=None):
         """
-        close positions based on tickets
+        modify positions based on ticket
 
         Parameters
         ----------
         ticket : Iterable[int,str] or int or str or None
             None -> all positions
-        volume : Iterable[float,None] or None
-            None -> whole position
+        sl,tp : Iterable[float or None] or float or None
+            None -> no sl or tp |
+            -1 -> dont change |
+            if Iterable -> len == len(type_order)
 
         Returns
         -------
@@ -202,22 +260,48 @@ class MTConnect:
 
         type(self)
         if ticket is None:
-            ticket = [x for x in self.positions['TICKET']]
-            volume = None
-        if volume is None:
-            volume = [None] * len(ticket)
-        volume = list(volume)
+            ticket = [x for x in self.positions['Ticket']]
+        if not isnonstriter(ticket):
+            ticket = (ticket,)
+        if not isinstance(sl, Iterable):
+            sl = (sl,) * len(ticket)
+        if not isinstance(tp, Iterable):
+            tp = (tp,) * len(ticket)
 
-        for c, i in enumerate(volume):
-            if i is None:
-                volume[c] = -1
-        assert len(ticket) == len(volume), 'ticket and volume should have same length'
+        assert len(ticket) == len(sl), 'len(sl) should be == len(type_order)'
+        assert len(ticket) == len(tp), 'len(tp) should be == len(type_order)'
 
-        resp = dict()
-        resp['command'] = 'position_close'
-        resp['args'] = dict()
-        resp['args']['ticket'] = ticket
-        resp['args']['volume'] = volume
+        modifies = []
+        for ticket_, sl_, tp_ in zip(ticket, sl, tp):
+            modifies.append({'ticket': ticket_, 'sl': sl_, 'tp': tp_})
+
+        resp = self.__response_template__('action', 'position_modify')
+        resp['args']['modifylist'] = modifies
+
+        return resp
+
+    # .................................
+    def position_close(self, ticket=None):
+        """
+        close positions based on tickets
+
+        Parameters
+        ----------
+        ticket : Iterable[int,str] or int or str or None
+            None -> all positions
+
+        Returns
+        -------
+        object
+        """
+
+        type(self)
+        if ticket is None:
+            ticket = [x for x in self.positions['Ticket']]
+        elif not isnonstriter(ticket):
+            ticket = (ticket,)
+        resp = self.__response_template__('action', 'position_close')
+        resp['args']['ticketlist'] = ticket
         return resp
 
     # ------------------------------------------------------------
@@ -228,6 +312,7 @@ class MTConnect:
             print('version mismatch :', message['version'])
             return self.__resp_error__
         self.__update_db__(message)
+        self.client_init = True
         return self.event_init(message)
 
     @abstractmethod
@@ -238,6 +323,7 @@ class MTConnect:
     # .................................
     def __event_deinit__(self, message):
         print("client destroyed : magic={}".format(message['magic']))
+        self.client_init = False
         return self.event_deinit(message)
 
     @abstractmethod
@@ -267,103 +353,19 @@ class MTConnect:
         dict(message)
         return self.__resp_empty__
 
-# todo:following features
-# .................................
+    # .................................
+    def __event_tick__(self, message):
+        print('tick')
+        self.__update_db__(message)
+        return self.event_tick(message)
 
-# def position_modify(self,
-#                     ticket,
-#                     sl=None,
-#                     tp=None):
-#     """
-#     modify positions based on ticket
-#
-#     Parameters
-#     ----------
-#     ticket : list[int,str]
-#     sl,tp : list[float,None] or None
-#
-#     Returns
-#     -------
-#     object
-#
-#     """
-#
-#     type(self)
-#
-#     if sl is None:
-#         sl = [None] * len(ticket)
-#     if tp is None:
-#         tp = [None] * len(ticket)
-#     assert len(ticket) == len(sl) == len(tp), 'ticket, sl & tp should have same length'
-#     resp = dict()
-#     resp['command'] = 'position_modify'
-#     resp['args'] = dict()
-#     resp['args']['ticket'] = ticket
-#     resp['args']['sl'] = sl
-#     resp['args']['tp'] = tp
-#     return resp
-#
-# # .................................
-# def position_modify_all(self,
-#                         position_type=None,
-#                         sl=None,
-#                         tp=None):
-#     """
-#     modify positions based on type
-#
-#     Parameters
-#     ----------
-#     position_type : str or None
-#         'POSITION_TYPE_BUY' or 'POSITION_TYPE_SELL' or None
-#     sl,tp : float or None
-#
-#     Returns
-#     -------
-#     object
-#
-#     """
-#
-#     Validator.argtype_validation('position_modify_all', **locals())
-#     if position_type is None:
-#         position_type = ('POSITION_TYPE_BUY', 'POSITION_TYPE_SELL')
-#     else:
-#         position_type = (position_type,)
-#
-#     ticket = []
-#     if self.positions is None:
-#         raise Exception('no position data available')
-#     for position in self.positions:
-#         if position['type'] in position_type:
-#             ticket.append(position['ticket'])
-#     sl = [sl] * len(ticket)
-#     tp = [tp] * len(ticket)
-#     return self.position_modify(ticket, sl, tp)
-# # .................................
-#     def position_close_type(self, position_type=None, volume=None):
-#         """
-#         close positions by type
-#
-#         Parameters
-#         ----------
-#         position_type : tuple or str or None
-#             None = close all types
-#         volume : float or None
-#
-#         Returns
-#         -------
-#         object
-#         """
-#
-#         if position_type is None:
-#             position_type = tuple(self.order_type_translate.values())
-#         else:
-#             position_type = (position_type,)
-#
-#         ticket = []
-#         if self.positions is None:
-#             raise Exception('no position data available')
-#         for position in self.positions:
-#             if position['type'] in position_type:
-#                 ticket.append(position['ticket'])
-#         volume = [volume] * len(ticket)
-#         return self.position_close(ticket, volume)
+    @abstractmethod
+    def event_tick(self, message):
+        dict(message)
+        return self.__resp_empty__
+
+    # .................................
+    def __sync_db__(self, message):
+        print('db sync')
+        self.__update_db__(message)
+        return self.__resp_empty__

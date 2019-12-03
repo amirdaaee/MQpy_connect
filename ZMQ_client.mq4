@@ -15,13 +15,13 @@
 #include <JAson.mqh>
 #include <TradeManager.mqh>
 
-//input string HOSTNAME="127.0.0.1";
-input string HOSTNAME="192.168.30.202";
+input string HOSTNAME="127.0.0.1";
 input int PORT=5556;
 input string ZEROMQ_PROTOCOL="tcp";
 input int PULLTIMEOUT=500;
 input int LASTBARSCOUNT=48;
 input int MagicNumber=123456;
+input bool TickEvent = False;
 
 const string PROJECT_NAME="ZMQ_client";
 const string Version = "MT4";
@@ -47,18 +47,14 @@ int OnInit()
    GetOrders(req_json);
    GetLastBars(req_json, LASTBARSCOUNT);
    SendRequest(req_json);
+   
    if(ServerLastMsg == "error" || ServerLastMsg == "empty")
      {
       return(-1);
      }
 //--- create timer
 //EventSetMillisecondTimer(TIMER);
-   OnTick();
    Print("initialization success");
-   CJAVal req_json2;
-   req_json2["event"]="initcomplete";
-   req_json2["args"]="NULL";
-   SendRequest(req_json2);
    return(INIT_SUCCEEDED);
   }
 //+------------------------------------------------------------------+
@@ -86,7 +82,15 @@ void OnTick()
       OnNewBar();
      }
    TradeManager::Run();
-   
+   if(TickEvent)
+     {
+      OnTickEvent();
+     }
+  }
+//+------------------------------------------------------------------+
+void OnTickEvent()
+  {
+   Print("tick");
    CJAVal req_json;
    req_json["event"]="tick";
    req_json["args"]["magic"]=MagicNumber;
@@ -112,7 +116,6 @@ void OnNewBar()
 //+------------------------------------------------------------------+
 void OnTrade()
   {
-   Print("TEST");
    static bool frist_run=True;
    if(frist_run)
      {
@@ -230,7 +233,7 @@ void GetResponse()
      }
    else
      {
-      Print("empty response from server");
+      Print("no response from server");
       ServerLastMsg = "empty";
      }
   }
@@ -252,21 +255,25 @@ void WhichAction(CJAVal &resp_json)
    string command=resp_json["command"].ToStr();
    if(command=="position_open")
       PositionOpen(resp_json);
-   /*   else
-         if(command=="position_modify")
-            PositionModify(&resp_json);
-   */
-
    else
-      if(command=="position_close")
+      if(command=="position_modify")
         {
-         PositionClose(resp_json);
+         PositionModify(resp_json);
         }
-
       else
-        {
-         PrintFormat("command not understood (%s)",command);
-        }
+         if(command=="position_close")
+           {
+            PositionClose(resp_json);
+           }
+         else
+            if(command == "sync")
+              {
+               SyncDB();
+              }
+            else
+              {
+               PrintFormat("command not understood (%s)",command);
+              }
   }
 //+------------------------------------------------------------------+
 void WhichMessage(CJAVal &resp_json)
@@ -280,84 +287,119 @@ void WhichMessage(CJAVal &resp_json)
 //+------------------------------------------------------------------+
 void PositionOpen(CJAVal &resp_json)
   {
-   Print("New order request");
-   int ordertype=StringToOrderType(resp_json["args"]["type"].ToStr());
-   double volume=resp_json["args"]["volume"].ToDbl();
-   double sl= resp_json["args"]["sl"].ToDbl();
-   double tp= resp_json["args"]["tp"].ToDbl();
+   Print("Position open request");
+   string ordertype_s;
+   int ordertype;
+   double volume;
+   double sl;
+   double tp;
+   string comment;
    double price;
    color OrderColor;
-   switch(ordertype)
-     {
-      case OP_BUY:
-        {
-         OrderColor = clrGreen;
-         price= Ask;
-         break;
-        }
-      case OP_SELL:
-        {
-         OrderColor = clrRed;
-         price= Bid;
-         break;
-        }
-      default:
-        {
-         PrintFormat("OrderType not found (%s)",resp_json["args"]["type"].ToStr());
-         return;
-        }
-     }
-   bool status = OrderSend(Symbol(), ordertype, volume, price, 100, sl, tp, "MTpy-connect", MagicNumber, 0, OrderColor) ;
-   if(status==true)
-     {
-      Print("New order : Done");
-     }
-   else
-     {
-      PrintFormat("New order : Fail (%u)",status);
-     }
-  }
-//+------------------------------------------------------------------+
-/*
-void PositionModify(CJAVal &resp_json)
-  {
-   Print("Position modify request");
-// fulfill default
-   for(int i=0; i<resp_json["args"]["ticket"].Size(); i++)
-     {
-      double sl= resp_json["args"]["sl"][i].ToDbl();
-      double tp= resp_json["args"]["tp"][i].ToDbl();
-      // order allocation
-      bool OrderSelect(i,SELECT_BY_POS,MODE_TRADES);
-      bool status= OrderModify(OrderTicket(), 0, sl,tp,0, 0);
-      if(status==true)
-        {
-         PrintFormat("position modify(ticket:%u) : Done",resp_json["args"]["ticket"][i].ToInt());
-        }
-      else
-        {
-         PrintFormat("position modify(ticket:%u) : Fail (%u)");
-        }
-     }
-  }
-  */
 
-//+------------------------------------------------------------------+
-void PositionClose(CJAVal &resp_json)
-  {
-   Print("Position close request");
-   double price;
-   color OrderColor;
-   for(int i=0; i<resp_json["args"]["ticket"].Size(); i++)
+   for(int i=0; i<resp_json["args"]["orderlist"].Size(); i++)
      {
-      int ticket = StringToInteger(resp_json["args"]["ticket"][i].ToStr());
-      int OrderTick=OrderSelect(ticket,SELECT_BY_TICKET,MODE_TRADES);
-      int ordertype=OrderType();
+      ordertype_s=resp_json["args"]["orderlist"][i]["type"].ToStr();
+      ordertype=StringToOrderType(ordertype_s);
+      volume=resp_json["args"]["orderlist"][i]["volume"].ToDbl();
+      sl= resp_json["args"]["orderlist"][i]["sl"].ToDbl();
+      tp= resp_json["args"]["orderlist"][i]["tp"].ToDbl();
+      comment = resp_json["args"]["orderlist"][i]["cm"].ToStr();
+
       switch(ordertype)
         {
          case OP_BUY:
            {
             OrderColor = clrGreen;
+            price= Ask;
+            break;
+           }
+         case OP_SELL:
+           {
+            OrderColor = clrRed;
+            price= Bid;
+            break;
+           }
+         default:
+           {
+            PrintFormat("OrderType not found (%s)",ordertype_s);
+            continue;
+           }
+        }
+      int status = OrderSend(Symbol(), ordertype, volume, price, 100, sl, tp, comment, MagicNumber, 0, OrderColor) ;
+      if(status!=-1)
+        {
+         PrintFormat("%s %f %f %f : Order done",ordertype_s,volume,sl,tp);
+        }
+      else
+        {
+         PrintFormat("%s %f %f %f : Order fail (code : %d)",ordertype_s,volume,sl,tp,GetLastError());
+        }
+     }
+  }
+//+------------------------------------------------------------------+
+void PositionModify(CJAVal &resp_json)
+  {
+   Print("Position modify request");
+   int ticket;
+   double sl;
+   double tp;
+
+   for(int i=0; i<resp_json["args"]["modifylist"].Size(); i++)
+     {
+      ticket=resp_json["args"]["modifylist"][i]["ticket"].ToInt();
+      if(!OrderSelect(ticket,SELECT_BY_TICKET))
+        {
+         PrintFormat("ticket %d not found",ticket);
+         continue;
+        }
+      sl= resp_json["args"]["modifylist"][i]["sl"].ToDbl();
+      tp= resp_json["args"]["modifylist"][i]["tp"].ToDbl();
+      if(sl == -1)
+        {
+         sl = OrderStopLoss();
+        }
+      if(tp== -1)
+        {
+         tp = OrderTakeProfit();
+        }
+      bool status = OrderModify(OrderTicket(),OrderOpenPrice(),sl,tp,OrderExpiration()) ;
+      if(status==true)
+        {
+         PrintFormat("%d : Position modify done",ticket);
+        }
+      else
+        {
+         PrintFormat("%d : Position modify fail (code : %d)",ticket,GetLastError());
+        }
+     }
+  }
+//+------------------------------------------------------------------+
+void PositionClose(CJAVal &resp_json)
+  {
+   Print("Position close request");
+   int ticket;
+   string ordertype_s;
+   int ordertype;
+   double price;
+   color OrderColor;
+
+   for(int i=0; i<resp_json["args"]["ticketlist"].Size(); i++)
+     {
+      ticket = resp_json["args"]["ticketlist"][i].ToInt();
+      if(!OrderSelect(ticket,SELECT_BY_TICKET))
+        {
+         PrintFormat("ticket %d not found",ticket);
+         continue;
+        }
+      ordertype=OrderType();
+      ordertype_s = OrderTypeToString(ordertype);
+
+      switch(ordertype)
+        {
+         case OP_BUY:
+           {
+            OrderColor = clrRed;
             price= Bid;
             break;
            }
@@ -369,22 +411,30 @@ void PositionClose(CJAVal &resp_json)
            }
          default:
            {
-            PrintFormat("OrderType not found (%s)",resp_json["args"]["type"].ToStr());
-            return;
+            PrintFormat("OrderType not found (%s)",ordertype_s);
+            continue;
            }
         }
-      bool status = OrderClose(OrderTicket(),OrderLots(),price,100,OrderColor);
+      bool status = OrderClose(ticket,OrderLots(),price,100,OrderColor);
       if(status==true)
         {
-         PrintFormat("position close(ticket:%u) : Done",resp_json["args"]["ticket"][i].ToInt());
+         PrintFormat("%d : Position close done",ticket);
         }
       else
         {
-         PrintFormat("position close(ticket:%u) : Done (%u)");
+         PrintFormat("%d : Position close fail (code : %d)",ticket,GetLastError());
         }
      }
   }
-
+//+------------------------------------------------------------------+
+void SyncDB()
+  {
+   CJAVal req_json;
+   req_json["event"]="sync";
+   GetOrders(req_json);
+   GetLastBars(req_json, LASTBARSCOUNT);
+   SendRequest(req_json);
+  }
 //+------------------------------------------------------------------+
 //helpers
 //+------------------------------------------------------------------+
