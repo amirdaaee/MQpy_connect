@@ -15,7 +15,8 @@
 #include <JAson.mqh>
 #include <TradeManager.mqh>
 
-input string HOSTNAME="127.0.0.1";
+//input string HOSTNAME="127.0.0.1";
+input string HOSTNAME="192.168.30.202";
 input int PORT=5556;
 input string ZEROMQ_PROTOCOL="tcp";
 input int PULLTIMEOUT=500;
@@ -52,7 +53,12 @@ int OnInit()
      }
 //--- create timer
 //EventSetMillisecondTimer(TIMER);
+   OnTick();
    Print("initialization success");
+   CJAVal req_json2;
+   req_json2["event"]="initcomplete";
+   req_json2["args"]="NULL";
+   SendRequest(req_json2);
    return(INIT_SUCCEEDED);
   }
 //+------------------------------------------------------------------+
@@ -80,6 +86,13 @@ void OnTick()
       OnNewBar();
      }
    TradeManager::Run();
+   
+   CJAVal req_json;
+   req_json["event"]="tick";
+   req_json["args"]["magic"]=MagicNumber;
+   req_json["args"]["ask"]=Ask;
+   req_json["args"]["bid"]=Bid;
+   SendRequest(req_json);
   }
 //+------------------------------------------------------------------+
 void OnNewBar()
@@ -99,6 +112,7 @@ void OnNewBar()
 //+------------------------------------------------------------------+
 void OnTrade()
   {
+   Print("TEST");
    static bool frist_run=True;
    if(frist_run)
      {
@@ -242,17 +256,17 @@ void WhichAction(CJAVal &resp_json)
          if(command=="position_modify")
             PositionModify(&resp_json);
    */
-   /*
+
    else
       if(command=="position_close")
         {
          PositionClose(resp_json);
         }
-        */
-   else
-     {
-      PrintFormat("command not understood (%s)",command);
-     }
+
+      else
+        {
+         PrintFormat("command not understood (%s)",command);
+        }
   }
 //+------------------------------------------------------------------+
 void WhichMessage(CJAVal &resp_json)
@@ -329,26 +343,36 @@ void PositionModify(CJAVal &resp_json)
   */
 
 //+------------------------------------------------------------------+
-/*
 void PositionClose(CJAVal &resp_json)
   {
    Print("Position close request");
-   color OrderColor;
    double price;
+   color OrderColor;
    for(int i=0; i<resp_json["args"]["ticket"].Size(); i++)
      {
-      X=StringToEnum(resp_json["args"]["type"].ToStr(),D);
-      if(X == S)
+      int ticket = StringToInteger(resp_json["args"]["ticket"][i].ToStr());
+      int OrderTick=OrderSelect(ticket,SELECT_BY_TICKET,MODE_TRADES);
+      int ordertype=OrderType();
+      switch(ordertype)
         {
-         OrderColor = clrRed;
-         price= Ask;
-        }
-      else
-         if(X == B)
+         case OP_BUY:
            {
             OrderColor = clrGreen;
             price= Bid;
+            break;
            }
+         case OP_SELL:
+           {
+            OrderColor = clrGreen;
+            price= Ask;
+            break;
+           }
+         default:
+           {
+            PrintFormat("OrderType not found (%s)",resp_json["args"]["type"].ToStr());
+            return;
+           }
+        }
       bool status = OrderClose(OrderTicket(),OrderLots(),price,100,OrderColor);
       if(status==true)
         {
@@ -360,7 +384,7 @@ void PositionClose(CJAVal &resp_json)
         }
      }
   }
-  */
+
 //+------------------------------------------------------------------+
 //helpers
 //+------------------------------------------------------------------+
