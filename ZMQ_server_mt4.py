@@ -11,6 +11,17 @@ def isnonstriter(obj):
     return (not isinstance(obj, str)) and isinstance(obj, Iterable)
 
 
+def tuplize(obj, length=None):
+    if not isnonstriter(obj):
+        if length is None:
+            obj = (obj,)
+        else:
+            obj = (obj,) * length
+    if not isinstance(obj, tuple):
+        obj = tuple(obj)
+    return obj
+
+
 # todo: merge into ZMQ_server_mt5.py (this is better version)
 class MTConnect:
     # ------------------------------------------------------------
@@ -175,7 +186,11 @@ class MTConnect:
     # ------------------------------ action functions
     def sync_req(self):
         resp = self.__response_template__('action', 'sync')
-        self.client_init = True
+        return resp
+
+    # ------------------------------ action functions
+    def term(self):
+        resp = self.__response_template__('action', 'term')
         return resp
 
     # .................................
@@ -205,16 +220,11 @@ class MTConnect:
         """
 
         type(self)
-        if not isnonstriter(type_order):
-            type_order = (type_order,)
-        if not isinstance(volume, Iterable):
-            volume = (volume,) * len(type_order)
-        if not isinstance(sl, Iterable):
-            sl = (sl,) * len(type_order)
-        if not isinstance(tp, Iterable):
-            tp = (tp,) * len(type_order)
-        if not isnonstriter(comment):
-            comment = (comment,) * len(type_order)
+        type_order = tuplize(type_order)
+        volume = tuplize(volume, len(type_order))
+        sl = tuplize(sl, len(type_order))
+        tp = tuplize(tp, len(type_order))
+        comment = tuplize(comment, len(type_order))
 
         assert len(type_order) == len(volume), 'len(volume) should be == len(type_order)'
         assert len(type_order) == len(sl), 'len(sl) should be == len(type_order)'
@@ -261,15 +271,13 @@ class MTConnect:
         type(self)
         if ticket is None:
             ticket = [x for x in self.positions['Ticket']]
-        if not isnonstriter(ticket):
-            ticket = (ticket,)
-        if not isinstance(sl, Iterable):
-            sl = (sl,) * len(ticket)
-        if not isinstance(tp, Iterable):
-            tp = (tp,) * len(ticket)
+            print(ticket)
+        ticket = tuplize(ticket)
+        sl = tuplize(sl, len(ticket))
+        tp = tuplize(tp, len(ticket))
 
-        assert len(ticket) == len(sl), 'len(sl) should be == len(type_order)'
-        assert len(ticket) == len(tp), 'len(tp) should be == len(type_order)'
+        assert len(ticket) == len(sl), 'len(sl) should be == len(ticket) : {} != {}'.format(sl, ticket)
+        assert len(ticket) == len(tp), 'len(tp) should be == len(ticket) : {} != {}'.format(sl, ticket)
 
         modifies = []
         for ticket_, sl_, tp_ in zip(ticket, sl, tp):
@@ -298,8 +306,7 @@ class MTConnect:
         type(self)
         if ticket is None:
             ticket = [x for x in self.positions['Ticket']]
-        elif not isnonstriter(ticket):
-            ticket = (ticket,)
+        ticket = tuplize(ticket)
         resp = self.__response_template__('action', 'position_close')
         resp['args']['ticketlist'] = ticket
         return resp
@@ -368,4 +375,5 @@ class MTConnect:
     def __sync_db__(self, message):
         print('db sync')
         self.__update_db__(message)
+        self.client_init = True
         return self.__resp_empty__
